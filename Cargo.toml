@@ -1,0 +1,38 @@
+[package]
+name = "rest-api-rust-clickhouse"
+version = "0.1.0"
+edition = "2021"
+default-run = "rest-api-rust-clickhouse"
+
+[[bin]]
+name = "migrate"
+path = "src/bin/migrate.rs"
+
+[dependencies]
+axum = { version = "0.7", features = ["json", "macros"] }
+tokio = { version = "1.0", features = ["full"] }
+clickhouse = "0.13.3"
+url = "2.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dotenvy = "0.15"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+bcrypt = "0.15"
+jsonwebtoken = "9.0"
+thiserror = "1.0"
+anyhow = "1.0"
+async-trait = "0.1"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+deadpool = "0.12"
+deadpool-postgres = "0.14"
+regex = "1.10"
+futures = "0.3"
+lazy_static = "1.4"
+
+[dev-dependencies]
+clickhouse = { version = "0.13.3", features = ["test-util"] }
