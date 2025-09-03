@@ -44,6 +44,6 @@ pub async fn run_base_migrations(client: &Client) -> Result<(), Box<dyn std::err
         .execute()
         .await?;
 
-    println!("Base database migrations completed successfully");
+    tracing::info!("Base database migrations completed successfully");
     Ok(())
 }

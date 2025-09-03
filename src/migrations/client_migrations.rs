@@ -268,6 +268,6 @@ pub async fn run_client_migrations(client: &Client) -> Result<(), Box<dyn std::e
         .execute()
         .await?;
 
-    println!("Client database migrations completed successfully");
+    tracing::info!("Client database migrations completed successfully");
     Ok(())
 }

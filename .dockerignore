@@ -35,7 +35,7 @@ Thumbs.db
 
 # Rust build artifacts
 target/
-Cargo.lock
+# Note: Cargo.lock should be included in Docker builds for reproducible dependency versions
 
 # Logs
 *.log
