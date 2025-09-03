@@ -24,7 +24,6 @@ RUN rm src/main.rs
 
 # Copy source code
 COPY src ./src
-COPY examples ./examples
 
 # Build the actual application
 # Remove the dummy targets first

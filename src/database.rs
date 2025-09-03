@@ -69,18 +69,25 @@ pub async fn init_database(config: &Config) -> Result<DatabasePool, Box<dyn std:
     let mut pool = HashMap::new();
 
     // Initialize base database connection using HTTPS URL
+    // Clean host (remove https:// prefix if exists)
+    let clean_host = config
+        .clickhouse
+        .base_host
+        .strip_prefix("https://")
+        .unwrap_or(&config.clickhouse.base_host);
+
     let https_url = format!(
         "https://{}:{}@{}:443/{}",
         config.clickhouse.base_user,
         config.clickhouse.base_password,
-        config.clickhouse.base_host,
+        clean_host,
         config.clickhouse.base_db
     );
 
     tracing::info!(
-        "Connecting to ClickHouse with URL: https://{}@{}/{}",
+        "Connecting to ClickHouse with URL: https://{}:***@{}/{}",
         config.clickhouse.base_user,
-        config.clickhouse.base_host,
+        clean_host,
         config.clickhouse.base_db
     );
 
