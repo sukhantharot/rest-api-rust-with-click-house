@@ -1,8 +1,8 @@
 [package]
-name = "rest-api-rust-clickhouse"
+name = "rarch"
 version = "0.1.0"
 edition = "2024"
-default-run = "rest-api-rust-clickhouse"
+default-run = "rarch"
 
 [[bin]]
 name = "migrate"

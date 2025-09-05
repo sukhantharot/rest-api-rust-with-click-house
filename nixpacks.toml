@@ -3,12 +3,12 @@
 cmds = [
   "cargo build --release",
   "mkdir -p bin",
-  "cp target/release/rest-api-rust-clickhouse bin/",
+  "cp target/release/rarch bin/",
   "cp target/release/migrate bin/"
 ]
 
 [phases.start]
-cmd = "./bin/rest-api-rust-clickhouse"
+cmd = "./bin/rarch"
 
 [variables]
 RUST_LOG = "info"

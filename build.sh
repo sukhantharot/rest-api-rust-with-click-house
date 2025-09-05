@@ -14,7 +14,7 @@ fi
 
 # Build the Docker image
 echo "📦 Building Docker image..."
-docker build -t rest-api-rust-clickhouse:latest .
+docker build -t rarch:latest .
 
 echo "✅ Docker image built successfully!"
 

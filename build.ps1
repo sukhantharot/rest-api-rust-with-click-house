@@ -17,7 +17,7 @@ catch {
 try {
     # Build the Docker image
     Write-Host "📦 Building Docker image..." -ForegroundColor Yellow
-    docker build -t rest-api-rust-clickhouse:latest .
+    docker build -t rarch:latest .
 
     Write-Host "✅ Docker image built successfully!" -ForegroundColor Green
 
