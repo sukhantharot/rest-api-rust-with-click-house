@@ -441,7 +441,7 @@ async fn run_client_migration_by_domain(
             "No base database client available".to_string(),
         ))?;
 
-    #[derive(clickhouse::Row)]
+    #[derive(clickhouse::Row, serde::Deserialize)]
     struct ClientConnection {
         database_url: String,
     }
@@ -474,7 +474,7 @@ async fn run_all_client_migrations(db_pool: &DatabasePool) -> Result<(), Migrati
             "No base database client available".to_string(),
         ))?;
 
-    #[derive(clickhouse::Row)]
+    #[derive(clickhouse::Row, serde::Deserialize)]
     struct ClientConnection {
         domain: String,
         database_url: String,
