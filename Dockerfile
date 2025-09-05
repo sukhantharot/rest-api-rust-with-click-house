@@ -33,7 +33,7 @@ RUN cargo build --release
 RUN cargo build --release --bin migrate
 
 # Stage 2: Runtime stage
-FROM debian:bookworm-slim
+FROM debian:sid-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
