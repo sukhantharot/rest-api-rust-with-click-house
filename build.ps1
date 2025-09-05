@@ -26,7 +26,7 @@ try {
     if ($response -eq "y" -or $response -eq "Y") {
         Write-Host "🌟 Starting the container..." -ForegroundColor Yellow
         docker-compose up -d
-        Write-Host "✅ Container started! API is available at http://localhost:3000" -ForegroundColor Green
+        Write-Host "✅ Container started! API is available at http://localhost:3700" -ForegroundColor Green
         Write-Host "📊 Check logs with: docker-compose logs -f rest-api" -ForegroundColor Cyan
         Write-Host "🛑 Stop with: docker-compose down" -ForegroundColor Cyan
     }

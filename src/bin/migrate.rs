@@ -8,7 +8,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 use url::Url;
 
 type DatabasePool = Arc<RwLock<HashMap<String, Client>>>;
@@ -76,7 +76,7 @@ async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     let config = Config {
         clickhouse: ClickHouseConfig {
             base_url: env::var("CLICKHOUSE_URL").unwrap_or_else(|_| {
-                "http://clickhouse-production-71f9.up.railway.app:8123".to_string()
+                "https://clickhouse:vOn8UIeaAdx3Rgz7wRYuMRlUiaHWBWhg@clickhouse-production-71f9.up.railway.app:8443/railway".to_string()
             }),
             base_db: env::var("CLICKHOUSE_DB").unwrap_or_else(|_| "railway".to_string()),
             base_host: env::var("CLICKHOUSE_HOST")
@@ -91,53 +91,20 @@ async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
 }
 
 fn convert_clickhouse_url(url_str: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let url = Url::parse(url_str)?;
-
-    if url.scheme() == "https" {
-        let host = url.host_str().ok_or("Invalid host")?;
-        let port = url.port().unwrap_or(443);
-        let username = url.username();
-        let password = url.password().unwrap_or("");
-        let database = url.path().trim_start_matches('/');
-
-        // Keep the same port but use HTTP protocol
-        let http_port = port;
-
-        let http_url = if username.is_empty() {
-            format!("http://{}:{}/{}", host, http_port, database)
-        } else {
-            format!(
-                "http://{}:{}@{}:{}/{}",
-                username, password, host, http_port, database
-            )
-        };
-
-        warn!("⚠️  Converted HTTPS URL to HTTP for ClickHouse client compatibility");
-
-        Ok(http_url)
-    } else {
-        Ok(url_str.to_string())
-    }
+    // ClickHouse client library supports HTTPS natively, no conversion needed
+    info!(
+        "✅ Using URL as-is: {}",
+        url_str.replace(":password@", ":***@")
+    );
+    Ok(url_str.to_string())
 }
 
 async fn init_database(config: &Config) -> Result<DatabasePool, Box<dyn std::error::Error>> {
     let mut pool = HashMap::new();
 
-    let clean_host = config
-        .clickhouse
-        .base_host
-        .strip_prefix("https://")
-        .unwrap_or(&config.clickhouse.base_host);
-
-    let https_url = format!(
-        "https://{}:{}@{}:443/{}",
-        config.clickhouse.base_user,
-        config.clickhouse.base_password,
-        clean_host,
-        config.clickhouse.base_db
-    );
-
-    let converted_url = convert_clickhouse_url(&https_url)?;
+    // Use the CLICKHOUSE_URL directly as it contains the correct port and protocol
+    let clickhouse_url = &config.clickhouse.base_url;
+    let converted_url = convert_clickhouse_url(clickhouse_url)?;
     let base_client = Client::default().with_url(converted_url);
 
     // Test the connection

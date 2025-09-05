@@ -1,0 +1,14 @@
+# Railway Nixpacks configuration
+[phases.build]
+cmds = [
+  "cargo build --release",
+  "mkdir -p bin",
+  "cp target/release/rest-api-rust-clickhouse bin/",
+  "cp target/release/migrate bin/"
+]
+
+[phases.start]
+cmd = "./bin/rest-api-rust-clickhouse"
+
+[variables]
+RUST_LOG = "info"

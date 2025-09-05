@@ -24,7 +24,7 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "🌟 Starting the container..."
     docker-compose up -d
-    echo "✅ Container started! API is available at http://localhost:3000"
+    echo "✅ Container started! API is available at http://localhost:3700"
     echo "📊 Check logs with: docker-compose logs -f rest-api"
     echo "🛑 Stop with: docker-compose down"
 else
