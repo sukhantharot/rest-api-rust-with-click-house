@@ -6,16 +6,16 @@ mod migrations;
 mod models;
 mod services;
 
-use axum::{routing::get, Router};
+use axum::{Router, routing::get};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tower::{Layer, ServiceBuilder};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{
+    EnvFilter, Layer as _,
     fmt::{self, time::UtcTime},
     layer::SubscriberExt,
     util::SubscriberInitExt,
-    EnvFilter, Layer as _,
 };
 
 #[tokio::main]
@@ -84,9 +84,10 @@ async fn main() {
 
     // Start task workers for available domains
     // In a production system, you'd start workers for all active domains
-    if let Err(e) = task_scheduler.start_worker_for_domain("example.com").await {
-        tracing::warn!("Failed to start task worker: {}", e);
-    }
+    // TODO: Start workers based on actual configured domains
+    // if let Err(e) = task_scheduler.start_worker_for_domain("your-domain.com").await {
+    //     tracing::warn!("Failed to start task worker: {}", e);
+    // }
 
     // Create the main router with comprehensive middleware stack
     let mut app = Router::new()

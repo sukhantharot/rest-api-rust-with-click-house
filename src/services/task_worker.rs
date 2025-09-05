@@ -340,7 +340,8 @@ impl TaskScheduler {
         };
 
         // This is a simplified example - in practice you'd query all domains
-        let domains = vec!["example.com"]; // Replace with actual domain fetching
+        // TODO: Query actual domains from database instead of hardcoded list
+        let domains: Vec<String> = vec![]; // Temporarily disabled for production
 
         for domain in domains {
             // Schedule daily cleanup task
