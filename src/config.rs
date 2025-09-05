@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 
 mod logging;
-pub use logging::{LogRotationConfig, LoggingConfig, RequestMetrics, log_request_metrics};
+pub use logging::{log_request_metrics, LogRotationConfig, LoggingConfig, RequestMetrics};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -54,9 +54,9 @@ pub async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
             host: env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PORT")
                 .or_else(|_| env::var("SERVER_PORT"))
-                .unwrap_or_else(|_| "3000".to_string())
+                .unwrap_or_else(|_| "3700".to_string())
                 .parse()
-                .unwrap_or(3000),
+                .unwrap_or(3700),
         },
         jwt: JwtConfig {
             secret: env::var("JWT_SECRET").unwrap_or_else(|_| {

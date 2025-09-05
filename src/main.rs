@@ -6,13 +6,10 @@ mod migrations;
 mod models;
 mod services;
 
-use axum::{Router, routing::get};
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use tower::{Layer, ServiceBuilder};
+use axum::{routing::get, Router};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{
-    EnvFilter, Layer as _,
     fmt::{self, time::UtcTime},
     layer::SubscriberExt,
     util::SubscriberInitExt,
@@ -157,7 +154,12 @@ async fn main() {
     }
 
     // Start the server
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.server.port));
+    let host: IpAddr = config
+        .server
+        .host
+        .parse()
+        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)); // 0.0.0.0
+    let addr = SocketAddr::new(host, config.server.port);
 
     tracing::info!(
         address = %addr,
