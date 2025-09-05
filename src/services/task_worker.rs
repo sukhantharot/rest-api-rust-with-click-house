@@ -360,7 +360,7 @@ impl TaskScheduler {
             };
 
             self.task_service
-                .create_task(&self.pool, domain, cleanup_task, None)
+                .create_task(&self.pool, &domain, cleanup_task, None)
                 .await?;
         }
 
