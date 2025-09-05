@@ -15,12 +15,12 @@ WORKDIR /usr/src/app
 # Copy Cargo files first for better layer caching
 COPY Cargo.toml Cargo.lock ./
 
-# Create a dummy src/main.rs to cache dependencies
-RUN mkdir src && echo "fn main() {println!(\"dummy\")}" > src/main.rs
+# Create dummy source files to cache dependencies
+RUN mkdir -p src/bin && echo "fn main() {println!(\"dummy\")}" > src/main.rs && echo "fn main() {println!(\"dummy\")}" > src/bin/migrate.rs
 
 # Build dependencies (this layer will be cached unless Cargo files change)
 RUN cargo build --release
-RUN rm src/main.rs
+RUN rm src/main.rs src/bin/migrate.rs
 
 # Copy source code
 COPY src ./src
