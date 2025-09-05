@@ -7,7 +7,10 @@ mod models;
 mod services;
 
 use axum::{routing::get, Router};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{
+    env,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{
     fmt::{self, time::UtcTime},
@@ -152,18 +155,15 @@ async fn main() {
             middleware::request_logging::simple_request_logging_middleware,
         ));
     }
-
-    // Start the server
-    let host: IpAddr = config
-        .server
-        .host
+    let port: u16 = env::var("PORT")
+        .unwrap_or_else(|_| "3700".to_string()) // ค่า default ที่คุณอยากให้ local ใช้
         .parse()
-        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)); // 0.0.0.0
-    let addr = SocketAddr::new(host, config.server.port);
+        .expect("PORT must be a number");
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
 
     tracing::info!(
         address = %addr,
-        port = config.server.port,
+        port = port,
         "🌐 Server starting..."
     );
 

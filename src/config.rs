@@ -7,7 +7,6 @@ pub use logging::{log_request_metrics, LogRotationConfig, LoggingConfig, Request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub clickhouse: ClickHouseConfig,
-    pub server: ServerConfig,
     pub jwt: JwtConfig,
     pub logging: LoggingConfig,
 }
@@ -19,12 +18,6 @@ pub struct ClickHouseConfig {
     pub base_host: String,
     pub base_password: String,
     pub base_user: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerConfig {
-    pub host: String,
-    pub port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,14 +43,6 @@ pub async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
             base_user: env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "clickhouse".to_string()),
         },
 
-        server: ServerConfig {
-            host: env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
-            port: env::var("PORT")
-                .or_else(|_| env::var("SERVER_PORT"))
-                .unwrap_or_else(|_| "3700".to_string())
-                .parse()
-                .unwrap_or(3700),
-        },
         jwt: JwtConfig {
             secret: env::var("JWT_SECRET").unwrap_or_else(|_| {
                 "your-super-secret-jwt-key-here-change-in-production".to_string()
