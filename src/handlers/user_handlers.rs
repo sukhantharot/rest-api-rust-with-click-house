@@ -2,11 +2,11 @@ use crate::database::DatabasePool;
 use crate::models::user::*;
 use crate::services::UserService;
 use axum::{
+    Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::Json,
     routing::{delete, get, post, put},
-    Router,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -21,9 +21,9 @@ pub fn user_routes() -> Router<DatabasePool> {
     Router::new()
         .route("/users", get(get_users))
         .route("/users", post(create_user))
-        .route("/users/:id", get(get_user))
-        .route("/users/:id", put(update_user))
-        .route("/users/:id", delete(delete_user))
+        .route("/users/{id}", get(get_user))
+        .route("/users/{id}", put(update_user))
+        .route("/users/{id}", delete(delete_user))
         .route("/auth/login", post(login))
 }
 

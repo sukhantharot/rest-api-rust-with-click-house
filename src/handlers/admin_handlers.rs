@@ -1,11 +1,11 @@
 use crate::database::DatabasePool;
 use crate::services::AdminService;
 use axum::{
+    Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::Json,
     routing::{delete, get, post, put},
-    Router,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -73,11 +73,11 @@ pub fn admin_routes() -> Router<DatabasePool> {
         // Client connection management
         .route("/admin/clients", get(get_client_connections))
         .route("/admin/clients", post(create_client_connection))
-        .route("/admin/clients/:id", get(get_client_connection))
-        .route("/admin/clients/:id", put(update_client_connection))
-        .route("/admin/clients/:id", delete(delete_client_connection))
-        .route("/admin/clients/:id/test", post(test_client_connection))
-        .route("/admin/clients/:id/migrate", post(migrate_client_database))
+        .route("/admin/clients/{id}", get(get_client_connection))
+        .route("/admin/clients/{id}", put(update_client_connection))
+        .route("/admin/clients/{id}", delete(delete_client_connection))
+        .route("/admin/clients/{id}/test", post(test_client_connection))
+        .route("/admin/clients/{id}/migrate", post(migrate_client_database))
 }
 
 // Base user authentication for admin operations

@@ -2,11 +2,11 @@ use crate::database::DatabasePool;
 use crate::models::blog::*;
 use crate::services::BlogService;
 use axum::{
+    Router,
     extract::{Path, Query, State},
     http::HeaderMap,
     response::Json,
     routing::{delete, get, post, put},
-    Router,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,11 +33,11 @@ pub fn blog_routes() -> Router<DatabasePool> {
         .route("/blogs", post(create_blog))
         .route("/blogs", get(get_blogs))
         .route("/blogs/search", get(search_blogs))
-        .route("/blogs/:id", get(get_blog))
-        .route("/blogs/:id", put(update_blog))
-        .route("/blogs/:id", delete(delete_blog))
-        .route("/blogs/:id/track", post(track_blog_view))
-        .route("/blogs/:id/stats", get(get_blog_stats))
+        .route("/blogs/{id}", get(get_blog))
+        .route("/blogs/{id}", put(update_blog))
+        .route("/blogs/{id}", delete(delete_blog))
+        .route("/blogs/{id}/track", post(track_blog_view))
+        .route("/blogs/{id}/stats", get(get_blog_stats))
         .route("/categories", post(create_category))
         .route("/categories", get(get_categories))
         .route("/tags", post(create_tag))
