@@ -1,51 +1,16 @@
 use crate::config::Config;
-use clickhouse::{Client, Row};
 use serde::{Deserialize, Serialize};
+use sqlx::{PgPool, Pool, Postgres, Row};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use url::Url;
+use uuid::Uuid;
 
-pub type DatabasePool = Arc<RwLock<HashMap<String, Client>>>;
+pub type DatabasePool = Arc<RwLock<HashMap<String, PgPool>>>;
 
-// Helper function to convert HTTPS URLs to HTTP for ClickHouse client compatibility
-fn convert_clickhouse_url(url_str: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let url = Url::parse(url_str)?;
-
-    if url.scheme() == "https" {
-        // Convert HTTPS to HTTP (ClickHouse client doesn't support HTTPS URLs directly)
-        let host = url.host_str().ok_or("Invalid host")?;
-        let port = url.port().unwrap_or(443);
-        let username = url.username();
-        let password = url.password().unwrap_or("");
-        let database = url.path().trim_start_matches('/');
-
-        // Keep the same port but use HTTP protocol
-        let http_port = port;
-
-        let http_url = if username.is_empty() {
-            format!("http://{}:{}/{}", host, http_port, database)
-        } else {
-            format!(
-                "http://{}:{}@{}:{}/{}",
-                username, password, host, http_port, database
-            )
-        };
-
-        tracing::warn!("⚠️  Converted HTTPS URL to HTTP for ClickHouse client compatibility");
-        tracing::debug!("   Original: {}", url_str);
-        tracing::debug!("   Converted: {}", http_url);
-
-        Ok(http_url)
-    } else {
-        // Already HTTP, return as-is
-        Ok(url_str.to_string())
-    }
-}
-
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ClientConnect {
-    pub id: u64,
+    pub id: Uuid,
     pub domain: String,
     pub database_url: String,
     pub database_name: String,
@@ -54,9 +19,9 @@ pub struct ClientConnect {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct BaseUser {
-    pub id: u64,
+    pub id: Uuid,
     pub username: String,
     pub email: String,
     pub password_hash: String,
@@ -68,42 +33,26 @@ pub struct BaseUser {
 pub async fn init_database(config: &Config) -> Result<DatabasePool, Box<dyn std::error::Error>> {
     let mut pool = HashMap::new();
 
-    // Initialize base database connection using HTTPS URL
-    // Clean host (remove https:// prefix if exists)
-    let clean_host = config
-        .clickhouse
-        .base_host
-        .strip_prefix("https://")
-        .unwrap_or(&config.clickhouse.base_host);
-
-    let https_url = format!(
-        "https://{}:{}@{}:443/{}",
-        config.clickhouse.base_user,
-        config.clickhouse.base_password,
-        clean_host,
-        config.clickhouse.base_db
-    );
-
     tracing::info!(
-        "Connecting to ClickHouse with URL: https://{}:***@{}/{}",
-        config.clickhouse.base_user,
-        clean_host,
-        config.clickhouse.base_db
+        "Connecting to PostgreSQL at {}:{}",
+        config.database.host,
+        config.database.port
     );
 
-    let base_client = Client::default().with_url(https_url);
+    // Initialize base database connection pool
+    let base_pool = PgPool::connect(&config.database.url).await?;
 
-    // Test the connection (disable for now to allow server to start)
+    // Test the connection
     tracing::info!("Testing database connection...");
-    match base_client.query("SELECT 1").fetch_all::<u8>().await {
+    match sqlx::query("SELECT 1").fetch_one(&base_pool).await {
         Ok(_) => tracing::info!("✅ Database connection successful"),
         Err(e) => {
-            tracing::warn!("⚠️  Database connection failed: {}", e);
-            tracing::info!("💡 Server will continue running without database for development");
+            tracing::error!("❌ Database connection failed: {}", e);
+            return Err(Box::new(e));
         }
     }
 
-    pool.insert("base".to_string(), base_client);
+    pool.insert("base".to_string(), base_pool);
 
     let pool = Arc::new(RwLock::new(pool));
 
@@ -116,49 +65,63 @@ pub async fn init_database(config: &Config) -> Result<DatabasePool, Box<dyn std:
 pub async fn load_client_connections(
     pool: &DatabasePool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let base_client = {
+    let base_pool = {
         let pool_read = pool.read().await;
         pool_read.get("base").unwrap().clone()
     };
 
-    let client_connections = base_client
-        .query("SELECT id, domain, database_url, database_name, is_active, created_at, updated_at FROM client_connect WHERE is_active = ?")
-        .bind(true)
-        .fetch_all::<ClientConnect>()
-        .await?;
+    let client_connections: Vec<ClientConnect> = sqlx::query_as(
+        "SELECT id, domain, database_url, database_name, is_active, created_at, updated_at 
+         FROM client_connect WHERE is_active = $1",
+    )
+    .bind(true)
+    .fetch_all(&base_pool)
+    .await?;
 
     let mut pool_write = pool.write().await;
     for client_conn in client_connections {
-        let client = Client::default()
-            .with_url(&client_conn.database_url)
-            .with_database(&client_conn.database_name);
-
-        // Test the connection
-        if let Ok(_) = client.query("SELECT 1").fetch_all::<u8>().await {
-            pool_write.insert(client_conn.domain.clone(), client);
-            tracing::info!(
-                "Loaded client connection for domain: {}",
-                client_conn.domain
-            );
-        } else {
-            tracing::warn!(
-                "Failed to connect to client database: {}",
-                client_conn.domain
-            );
+        match PgPool::connect(&client_conn.database_url).await {
+            Ok(client_pool) => {
+                // Test the connection
+                if let Ok(_) = sqlx::query("SELECT 1").fetch_one(&client_pool).await {
+                    pool_write.insert(client_conn.domain.clone(), client_pool);
+                    tracing::info!(
+                        "✅ Loaded client connection for domain: {}",
+                        client_conn.domain
+                    );
+                } else {
+                    tracing::warn!(
+                        "⚠️  Failed to test client database connection: {}",
+                        client_conn.domain
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "⚠️  Failed to connect to client database {}: {}",
+                    client_conn.domain,
+                    e
+                );
+            }
         }
     }
 
     Ok(())
 }
 
-pub async fn get_client_by_domain(pool: &DatabasePool, domain: &str) -> Option<Client> {
+pub async fn get_client_by_domain(pool: &DatabasePool, domain: &str) -> Option<PgPool> {
     let pool_read = pool.read().await;
     pool_read.get(domain).cloned()
 }
 
-pub async fn get_base_client(pool: &DatabasePool) -> Option<Client> {
+pub async fn get_base_pool(pool: &DatabasePool) -> Option<PgPool> {
     let pool_read = pool.read().await;
     pool_read.get("base").cloned()
+}
+
+// Alias for compatibility
+pub async fn get_base_client(pool: &DatabasePool) -> Option<PgPool> {
+    get_base_pool(pool).await
 }
 
 pub async fn add_client_connection(
@@ -167,27 +130,35 @@ pub async fn add_client_connection(
     database_url: &str,
     database_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let base_client = get_base_client(pool)
+    let base_pool = get_base_pool(pool)
         .await
-        .ok_or("Base database client not available")?;
+        .ok_or("Base database pool not available")?;
 
     // Insert into base database
-    base_client
-        .query("INSERT INTO client_connect (domain, database_url, database_name, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, now(), now())")
-        .bind(domain)
-        .bind(database_url)
-        .bind(database_name)
-        .bind(true)
-        .execute()
-        .await?;
+    let client_id = Uuid::new_v4();
+    let now = chrono::Utc::now();
+
+    sqlx::query(
+        "INSERT INTO client_connect (id, domain, database_url, database_name, is_active, created_at, updated_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7)"
+    )
+    .bind(client_id)
+    .bind(domain)
+    .bind(database_url)
+    .bind(database_name)
+    .bind(true)
+    .bind(now)
+    .bind(now)
+    .execute(&base_pool)
+    .await?;
 
     // Add to connection pool
-    let client = Client::default()
-        .with_url(database_url)
-        .with_database(database_name);
+    let client_pool = PgPool::connect(database_url).await?;
 
     let mut pool_write = pool.write().await;
-    pool_write.insert(domain.to_string(), client);
+    pool_write.insert(domain.to_string(), client_pool);
+
+    tracing::info!("✅ Added client connection for domain: {}", domain);
 
     Ok(())
 }
@@ -196,21 +167,35 @@ pub async fn remove_client_connection(
     pool: &DatabasePool,
     domain: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let base_client = get_base_client(pool)
+    let base_pool = get_base_pool(pool)
         .await
-        .ok_or("Base database client not available")?;
+        .ok_or("Base database pool not available")?;
 
     // Mark as inactive in base database
-    base_client
-        .query("UPDATE client_connect SET is_active = ?, updated_at = now() WHERE domain = ?")
+    let now = chrono::Utc::now();
+    sqlx::query("UPDATE client_connect SET is_active = $1, updated_at = $2 WHERE domain = $3")
         .bind(false)
+        .bind(now)
         .bind(domain)
-        .execute()
+        .execute(&base_pool)
         .await?;
 
     // Remove from connection pool
     let mut pool_write = pool.write().await;
-    pool_write.remove(domain);
+    if let Some(removed_pool) = pool_write.remove(domain) {
+        removed_pool.close().await;
+        tracing::info!("✅ Removed client connection for domain: {}", domain);
+    }
 
     Ok(())
+}
+
+// Helper function to get connection pool for a domain
+pub async fn get_pool_for_domain(
+    pool: &DatabasePool,
+    domain: &str,
+) -> Result<PgPool, anyhow::Error> {
+    get_client_by_domain(pool, domain)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("No database pool found for domain: {}", domain))
 }

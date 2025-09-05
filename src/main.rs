@@ -62,7 +62,7 @@ async fn main() {
             // Return empty pool for development
             std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::<
                 String,
-                clickhouse::Client,
+                sqlx::PgPool,
             >::new()))
         }
     };
@@ -76,33 +76,18 @@ async fn main() {
         }
     }
 
-    // Initialize task scheduler
-    let task_service = services::TaskService::new();
-    services::register_builtin_handlers(&task_service).await;
-
-    let task_scheduler = services::TaskScheduler::new(task_service, db_pool.clone());
-
-    // Start task workers for available domains
-    // In a production system, you'd start workers for all active domains
-    // TODO: Start workers based on actual configured domains
-    // if let Err(e) = task_scheduler.start_worker_for_domain("your-domain.com").await {
-    //     tracing::warn!("Failed to start task worker: {}", e);
-    // }
+    // Task scheduler removed for simplicity
 
     // Create the main router with comprehensive middleware stack
-    let mut app = Router::new()
+    let app = Router::new()
         .route("/", get(root))
         .route("/health", get(health_check))
-        // Admin routes (without domain middleware - for system administration)
-        .merge(handlers::admin_handlers::admin_routes())
+        // Health and root routes
         // Client routes (with domain middleware)
         .merge(
             Router::new()
                 .merge(handlers::user_handlers::user_routes())
-                .merge(handlers::role_handlers::role_routes())
-                .merge(handlers::permission_handlers::permission_routes())
                 .merge(handlers::blog_handlers::blog_routes())
-                .merge(handlers::task_handlers::task_routes())
                 .layer(axum::middleware::from_fn_with_state(
                     db_pool.clone(),
                     middleware::domain_middleware::domain_middleware,
@@ -149,12 +134,7 @@ async fn main() {
         )
         .with_state(db_pool.clone());
 
-    // Conditionally add request logging middleware if enabled
-    if config.logging.request_logging {
-        app = app.layer(axum::middleware::from_fn(
-            middleware::request_logging::simple_request_logging_middleware,
-        ));
-    }
+    // Request logging middleware removed for simplicity
     let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| "3700".to_string()) // ค่า default ที่คุณอยากให้ local ใช้
         .parse()
@@ -195,19 +175,19 @@ async fn run_migrations(
     db_pool: &database::DatabasePool,
     config: &config::Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Run base database migrations (skip if no base client available)
-    let base_client = match database::get_base_client(db_pool).await {
-        Some(client) => client,
+    // Run base database migrations (skip if no base pool available)
+    let base_pool = match database::get_base_pool(db_pool).await {
+        Some(pool) => pool,
         None => {
-            tracing::warn!("No base database client available, skipping migrations");
+            tracing::warn!("No base database pool available, skipping migrations");
             return Ok(());
         }
     };
-    migrations::run_base_migrations(&base_client).await?;
+    migrations::run_base_migrations(&base_pool).await?;
 
     // For now, we'll also run client migrations on the base database for testing
     // In production, you would run this on each client database
-    migrations::run_client_migrations(&base_client).await?;
+    migrations::run_client_migrations(&base_pool).await?;
 
     Ok(())
 }

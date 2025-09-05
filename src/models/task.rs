@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
-use clickhouse::Row;
+// Removed clickhouse import - using PostgreSQL now
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: Uuid,
     pub task_type: String,
@@ -58,7 +58,7 @@ pub struct TaskResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskExecution {
     pub id: Uuid,
     pub task_id: Uuid,

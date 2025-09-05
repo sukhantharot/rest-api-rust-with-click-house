@@ -6,18 +6,21 @@ pub use logging::{log_request_metrics, LogRotationConfig, LoggingConfig, Request
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub clickhouse: ClickHouseConfig,
+    pub database: DatabaseConfig,
     pub jwt: JwtConfig,
     pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClickHouseConfig {
-    pub base_url: String,
-    pub base_db: String,
-    pub base_host: String,
-    pub base_password: String,
-    pub base_user: String,
+pub struct DatabaseConfig {
+    pub url: String,
+    pub host: String,
+    pub port: u16,
+    pub name: String,
+    pub user: String,
+    pub password: String,
+    pub max_connections: u32,
+    pub min_connections: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,16 +34,33 @@ pub async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     let _ = dotenvy::dotenv();
 
     let config = Config {
-        clickhouse: ClickHouseConfig {
-            base_url: env::var("CLICKHOUSE_URL").unwrap_or_else(|_| {
-                "http://clickhouse-production-71f9.up.railway.app:8123".to_string()
+        database: DatabaseConfig {
+            url: env::var("DATABASE_URL").unwrap_or_else(|_| {
+                format!(
+                    "postgres://{}:{}@{}:{}/{}",
+                    env::var("DB_USER").unwrap_or_else(|_| "postgres".to_string()),
+                    env::var("DB_PASSWORD").unwrap_or_else(|_| "password".to_string()),
+                    env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string()),
+                    env::var("DB_PORT").unwrap_or_else(|_| "5432".to_string()),
+                    env::var("DB_NAME").unwrap_or_else(|_| "railway".to_string())
+                )
             }),
-            base_db: env::var("CLICKHOUSE_DB").unwrap_or_else(|_| "railway".to_string()),
-            base_host: env::var("CLICKHOUSE_HOST")
-                .unwrap_or_else(|_| "clickhouse-production-71f9.up.railway.app".to_string()),
-            base_password: env::var("CLICKHOUSE_PASSWORD")
-                .unwrap_or_else(|_| "vOn8UIeaAdx3Rgz7wRYuMRlUiaHWBWhg".to_string()),
-            base_user: env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "clickhouse".to_string()),
+            host: env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            port: env::var("DB_PORT")
+                .unwrap_or_else(|_| "5432".to_string())
+                .parse()
+                .unwrap_or(5432),
+            name: env::var("DB_NAME").unwrap_or_else(|_| "railway".to_string()),
+            user: env::var("DB_USER").unwrap_or_else(|_| "postgres".to_string()),
+            password: env::var("DB_PASSWORD").unwrap_or_else(|_| "password".to_string()),
+            max_connections: env::var("DB_MAX_CONNECTIONS")
+                .unwrap_or_else(|_| "10".to_string())
+                .parse()
+                .unwrap_or(10),
+            min_connections: env::var("DB_MIN_CONNECTIONS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()
+                .unwrap_or(1),
         },
 
         jwt: JwtConfig {

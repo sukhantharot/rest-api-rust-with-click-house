@@ -2,11 +2,11 @@ use crate::database::DatabasePool;
 use crate::models::user::*;
 use crate::services::UserService;
 use axum::{
-    Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::Json,
     routing::{delete, get, post, put},
+    Router,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -33,10 +33,7 @@ async fn create_user(
     Json(payload): Json<CreateUserRequest>,
 ) -> Result<Json<UserResponse>, (StatusCode, String)> {
     let domain = extract_domain_from_headers(&headers).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_service = UserService::new(
-        "your-jwt-secret".to_string(), // TODO: Get from config
-        24,
-    );
+    let user_service = UserService::new();
 
     match user_service.create_user(&pool, &domain, payload).await {
         Ok(user) => Ok(Json(user)),
@@ -50,10 +47,7 @@ async fn get_users(
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<Json<Vec<UserResponse>>, (StatusCode, String)> {
     let domain = extract_domain_from_headers(&headers).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_service = UserService::new(
-        "your-jwt-secret".to_string(), // TODO: Get from config
-        24,
-    );
+    let user_service = UserService::new();
 
     match user_service
         .get_users(&pool, &domain, pagination.limit, pagination.offset)
@@ -70,10 +64,7 @@ async fn get_user(
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<UserResponse>, (StatusCode, String)> {
     let domain = extract_domain_from_headers(&headers).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_service = UserService::new(
-        "your-jwt-secret".to_string(), // TODO: Get from config
-        24,
-    );
+    let user_service = UserService::new();
 
     match user_service.get_user_by_id(&pool, &domain, user_id).await {
         Ok(user) => Ok(Json(user)),
@@ -94,10 +85,7 @@ async fn update_user(
     Json(payload): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>, (StatusCode, String)> {
     let domain = extract_domain_from_headers(&headers).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_service = UserService::new(
-        "your-jwt-secret".to_string(), // TODO: Get from config
-        24,
-    );
+    let user_service = UserService::new();
 
     match user_service
         .update_user(&pool, &domain, user_id, payload)
@@ -120,10 +108,7 @@ async fn delete_user(
     Path(user_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let domain = extract_domain_from_headers(&headers).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_service = UserService::new(
-        "your-jwt-secret".to_string(), // TODO: Get from config
-        24,
-    );
+    let user_service = UserService::new();
 
     match user_service.delete_user(&pool, &domain, user_id).await {
         Ok(_) => Ok(StatusCode::NO_CONTENT),
@@ -143,16 +128,22 @@ async fn login(
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, String)> {
     let domain = extract_domain_from_headers(&headers).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_service = UserService::new(
-        "your-jwt-secret".to_string(), // TODO: Get from config
-        24,
-    );
+    let user_service = UserService::new();
 
     match user_service
         .authenticate_user(&pool, &domain, payload)
         .await
     {
-        Ok(login_response) => Ok(Json(login_response)),
+        Ok(user_response) => {
+            // For now, just return the user response directly
+            // In production, you'd create a proper LoginResponse with JWT token
+            Ok(Json(LoginResponse {
+                user: user_response,
+                token: "dummy-jwt-token".to_string(), // TODO: Generate real JWT
+                token_type: "Bearer".to_string(),
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+            }))
+        }
         Err(e) => {
             if e.to_string().contains("Invalid credentials") {
                 Err((StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()))

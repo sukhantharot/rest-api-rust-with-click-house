@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
-use clickhouse::Row;
+// Removed clickhouse import - using PostgreSQL now
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Role {
     pub id: Uuid,
     pub name: String,
@@ -38,7 +38,7 @@ pub struct RoleResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Permission {
     pub id: Uuid,
     pub name: String,
@@ -80,7 +80,7 @@ pub struct PermissionResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RolePermission {
     pub id: Uuid,
     pub role_id: Uuid,

@@ -2,30 +2,15 @@ use crate::database::DatabasePool;
 use crate::models::user::*;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::{DateTime, Utc};
-use clickhouse::Client;
-use jsonwebtoken::{encode, EncodingKey, Header};
-use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Claims {
-    sub: String,
-    exp: usize,
-    iat: usize,
-}
-
-pub struct UserService {
-    jwt_secret: String,
-    jwt_expiration_hours: i64,
-}
+pub struct UserService;
 
 impl UserService {
-    pub fn new(jwt_secret: String, jwt_expiration_hours: i64) -> Self {
-        Self {
-            jwt_secret,
-            jwt_expiration_hours,
-        }
+    pub fn new() -> Self {
+        Self
     }
 
     pub async fn create_user(
@@ -34,18 +19,18 @@ impl UserService {
         domain: &str,
         request: CreateUserRequest,
     ) -> Result<UserResponse, Box<dyn std::error::Error>> {
-        let client = self.get_client_by_domain(pool, domain).await?;
+        let pg_pool = crate::database::get_pool_for_domain(pool, domain).await?;
 
-        // Check if username or email already exists
-        let existing_count = client
-            .query("SELECT count() FROM users WHERE username = ? OR email = ?")
-            .bind(&request.username)
-            .bind(&request.email)
-            .fetch_one::<u64>()
-            .await?;
+        // Check if user already exists
+        let existing_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE (username = $1 OR email = $2)")
+                .bind(&request.username)
+                .bind(&request.email)
+                .fetch_one(&pg_pool)
+                .await?;
 
         if existing_count > 0 {
-            return Err("Username or email already exists".into());
+            return Err("User with this username or email already exists".into());
         }
 
         // Hash password
@@ -55,23 +40,29 @@ impl UserService {
         let now = Utc::now();
 
         // Insert user
-        client
-            .query("INSERT INTO users (id, username, email, password_hash, first_name, last_name, is_active, is_verified, role_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(user_id)
-            .bind(&request.username)
-            .bind(&request.email)
-            .bind(&password_hash)
-            .bind(&request.first_name)
-            .bind(&request.last_name)
-            .bind(true)
-            .bind(false)
-            .bind(request.role_id)
-            .bind(now)
-            .bind(now)
-            .execute()
-            .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO users (
+                id, username, email, password_hash, first_name, last_name, 
+                is_active, is_verified, role_id, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "#,
+        )
+        .bind(user_id)
+        .bind(&request.username)
+        .bind(&request.email)
+        .bind(&password_hash)
+        .bind(&request.first_name)
+        .bind(&request.last_name)
+        .bind(true)
+        .bind(false)
+        .bind(request.role_id)
+        .bind(now)
+        .bind(now)
+        .execute(&pg_pool)
+        .await?;
 
-        // Get the created user with role
+        // Get the created user
         let user = self.get_user_by_id(pool, domain, user_id).await?;
 
         Ok(user)
@@ -83,107 +74,37 @@ impl UserService {
         domain: &str,
         user_id: Uuid,
     ) -> Result<UserResponse, Box<dyn std::error::Error>> {
-        let client = self.get_client_by_domain(pool, domain).await?;
+        let pg_pool = crate::database::get_pool_for_domain(pool, domain).await?;
 
-        // Get user data - split into smaller queries to avoid tuple size limits
-        // First get the basic user info as separate queries
-        let user_id_str = client
-            .query("SELECT id FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_optional::<String>()
-            .await?
-            .ok_or("User not found")?;
+        let row = sqlx::query(
+            r#"
+            SELECT u.id, u.username, u.email, u.first_name, u.last_name, 
+                   u.is_active, u.is_verified, u.role_id, u.last_login_at, 
+                   u.created_at, u.updated_at
+            FROM users u WHERE u.id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(&pg_pool)
+        .await?;
 
-        let username = client
-            .query("SELECT username FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
+        let id: Uuid = row.get("id");
+        let username: String = row.get("username");
+        let email: String = row.get("email");
+        let first_name: Option<String> = row.get("first_name");
+        let last_name: Option<String> = row.get("last_name");
+        let is_active: bool = row.get("is_active");
+        let is_verified: bool = row.get("is_verified");
+        let role_id: Option<Uuid> = row.get("role_id");
+        let last_login_at: Option<DateTime<Utc>> = row.get("last_login_at");
+        let created_at: DateTime<Utc> = row.get("created_at");
+        let updated_at: DateTime<Utc> = row.get("updated_at");
 
-        let email = client
-            .query("SELECT email FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
-
-        let first_name = client
-            .query("SELECT first_name FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_optional::<String>()
-            .await?;
-
-        let last_name = client
-            .query("SELECT last_name FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_optional::<String>()
-            .await?;
-
-        let is_active = client
-            .query("SELECT is_active FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_one::<bool>()
-            .await?;
-
-        let is_verified = client
-            .query("SELECT is_verified FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_one::<bool>()
-            .await?;
-
-        let role_id_str = client
-            .query("SELECT role_id FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_optional::<String>()
-            .await?;
-
-        let last_login_at_str = client
-            .query("SELECT last_login_at FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_optional::<String>()
-            .await?;
-
-        let created_at_str = client
-            .query("SELECT created_at FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
-
-        let updated_at_str = client
-            .query("SELECT updated_at FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
-
-        // Parse the values
-        let parsed_user_id = Uuid::parse_str(&user_id_str)?;
-        let role_id = role_id_str.as_ref().and_then(|s| Uuid::parse_str(s).ok());
-        let last_login_at = last_login_at_str
-            .as_ref()
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc));
-        let created_at = DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc);
-        let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)?.with_timezone(&Utc);
-
-        // Get role data if user has a role
-        let role = if let Some(rid) = role_id {
-            self.get_role_by_id(&client, domain, rid).await.ok()
-        } else {
-            None
-        };
+        // Role system simplified for now
+        let role = None;
 
         Ok(UserResponse {
-            id: parsed_user_id,
+            id,
             username,
             email,
             first_name,
@@ -201,47 +122,62 @@ impl UserService {
         &self,
         pool: &DatabasePool,
         domain: &str,
+        page: Option<u32>,
         limit: Option<u32>,
-        offset: Option<u32>,
     ) -> Result<Vec<UserResponse>, Box<dyn std::error::Error>> {
-        let client = self.get_client_by_domain(pool, domain).await?;
-        let limit = limit.unwrap_or(50);
-        let offset = offset.unwrap_or(0);
+        let pg_pool = crate::database::get_pool_for_domain(pool, domain).await?;
+        let page = page.unwrap_or(1);
+        let limit = limit.unwrap_or(20);
+        let offset = ((page - 1) * limit) as i64;
 
-        // Get user IDs first - use count to avoid single-element tuple
-        let user_count = client
-            .query("SELECT count() FROM users WHERE domain = ?")
-            .bind(domain)
-            .fetch_one::<u64>()
-            .await?;
+        let rows = sqlx::query(
+            r#"
+            SELECT u.id, u.username, u.email, u.first_name, u.last_name, 
+                   u.is_active, u.is_verified, u.role_id, u.last_login_at, 
+                   u.created_at, u.updated_at
+            FROM users u 
+            ORDER BY u.created_at DESC 
+            LIMIT $1 OFFSET $2
+            "#,
+        )
+        .bind(limit as i64)
+        .bind(offset)
+        .fetch_all(&pg_pool)
+        .await?;
 
-        let mut user_responses = Vec::new();
+        let mut users = Vec::new();
+        for row in rows {
+            let id: Uuid = row.get("id");
+            let username: String = row.get("username");
+            let email: String = row.get("email");
+            let first_name: Option<String> = row.get("first_name");
+            let last_name: Option<String> = row.get("last_name");
+            let is_active: bool = row.get("is_active");
+            let is_verified: bool = row.get("is_verified");
+            let role_id: Option<Uuid> = row.get("role_id");
+            let last_login_at: Option<DateTime<Utc>> = row.get("last_login_at");
+            let created_at: DateTime<Utc> = row.get("created_at");
+            let updated_at: DateTime<Utc> = row.get("updated_at");
 
-        // If we have users, get them one by one to avoid large tuples
-        if user_count > 0 {
-            for i in 0..limit {
-                let idx = i as u64 + offset as u64;
-                if idx >= user_count {
-                    break;
-                }
+            // Role system simplified for now
+            let role = None;
 
-                // Get user ID at this position as string
-                let user_id_str = client
-                    .query("SELECT id FROM users WHERE domain = ? ORDER BY created_at DESC LIMIT 1 OFFSET ?")
-                    .bind(domain)
-                    .bind(idx)
-                    .fetch_one::<String>()
-                    .await?;
-
-                let user_id = Uuid::parse_str(&user_id_str)?;
-
-                if let Ok(user) = self.get_user_by_id(pool, domain, user_id).await {
-                    user_responses.push(user);
-                }
-            }
+            users.push(UserResponse {
+                id,
+                username,
+                email,
+                first_name,
+                last_name,
+                is_active,
+                is_verified,
+                role,
+                last_login_at,
+                created_at,
+                updated_at,
+            });
         }
 
-        Ok(user_responses)
+        Ok(users)
     }
 
     pub async fn update_user(
@@ -251,49 +187,71 @@ impl UserService {
         user_id: Uuid,
         request: UpdateUserRequest,
     ) -> Result<UserResponse, Box<dyn std::error::Error>> {
-        let client = self.get_client_by_domain(pool, domain).await?;
-
+        let pg_pool = crate::database::get_pool_for_domain(pool, domain).await?;
         let now = Utc::now();
 
         // Build dynamic update query
-        let mut query = "UPDATE users SET updated_at = ?".to_string();
-        let mut binds: Vec<String> = vec![now.to_string()];
+        let mut updates = vec!["updated_at = $1".to_string()];
+        let mut bind_index = 2;
+
+        if request.username.is_some() {
+            updates.push(format!("username = ${}", bind_index));
+            bind_index += 1;
+        }
+        if request.email.is_some() {
+            updates.push(format!("email = ${}", bind_index));
+            bind_index += 1;
+        }
+        if request.first_name.is_some() {
+            updates.push(format!("first_name = ${}", bind_index));
+            bind_index += 1;
+        }
+        if request.last_name.is_some() {
+            updates.push(format!("last_name = ${}", bind_index));
+            bind_index += 1;
+        }
+        if request.is_active.is_some() {
+            updates.push(format!("is_active = ${}", bind_index));
+            bind_index += 1;
+        }
+        // is_verified field removed for simplicity
+        if request.role_id.is_some() {
+            updates.push(format!("role_id = ${}", bind_index));
+            bind_index += 1;
+        }
+
+        let query = format!(
+            "UPDATE users SET {} WHERE id = ${}",
+            updates.join(", "),
+            bind_index
+        );
+
+        let mut query_builder = sqlx::query(&query).bind(now);
 
         if let Some(username) = &request.username {
-            query.push_str(", username = ?");
-            binds.push(username.clone());
+            query_builder = query_builder.bind(username);
         }
         if let Some(email) = &request.email {
-            query.push_str(", email = ?");
-            binds.push(email.clone());
+            query_builder = query_builder.bind(email);
         }
-        if let Some(ref first_name) = request.first_name {
-            query.push_str(", first_name = ?");
-            binds.push(first_name.clone());
+        if let Some(first_name) = &request.first_name {
+            query_builder = query_builder.bind(first_name);
         }
-        if let Some(ref last_name) = request.last_name {
-            query.push_str(", last_name = ?");
-            binds.push(last_name.clone());
+        if let Some(last_name) = &request.last_name {
+            query_builder = query_builder.bind(last_name);
         }
         if let Some(is_active) = request.is_active {
-            query.push_str(", is_active = ?");
-            binds.push(is_active.to_string());
+            query_builder = query_builder.bind(is_active);
         }
+        // is_verified field removed for simplicity
         if let Some(role_id) = request.role_id {
-            query.push_str(", role_id = ?");
-            binds.push(role_id.to_string());
+            query_builder = query_builder.bind(role_id);
         }
 
-        query.push_str(" WHERE id = ?");
-        binds.push(user_id.to_string());
+        query_builder = query_builder.bind(user_id);
+        query_builder.execute(&pg_pool).await?;
 
-        let mut clickhouse_query = client.query(&query).bind(now);
-        for bind in binds {
-            clickhouse_query = clickhouse_query.bind(bind);
-        }
-        clickhouse_query.execute().await?;
-
-        // Get updated user
+        // Get the updated user
         self.get_user_by_id(pool, domain, user_id).await
     }
 
@@ -303,12 +261,11 @@ impl UserService {
         domain: &str,
         user_id: Uuid,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let client = self.get_client_by_domain(pool, domain).await?;
+        let pg_pool = crate::database::get_pool_for_domain(pool, domain).await?;
 
-        client
-            .query("DELETE FROM users WHERE id = ?")
+        sqlx::query("DELETE FROM users WHERE id = $1")
             .bind(user_id)
-            .execute()
+            .execute(&pg_pool)
             .await?;
 
         Ok(())
@@ -319,154 +276,40 @@ impl UserService {
         pool: &DatabasePool,
         domain: &str,
         request: LoginRequest,
-    ) -> Result<LoginResponse, Box<dyn std::error::Error>> {
-        let client = self.get_client_by_domain(pool, domain).await?;
+    ) -> Result<UserResponse, Box<dyn std::error::Error>> {
+        let pg_pool = crate::database::get_pool_for_domain(pool, domain).await?;
 
-        // Find user by username or email - check if exists first
-        let user_exists = client
-            .query("SELECT count() FROM users WHERE (username = ? OR email = ?) AND is_active = ? AND domain = ?")
-            .bind(&request.username_or_email)
-            .bind(&request.username_or_email)
-            .bind(true)
-            .bind(domain)
-            .fetch_one::<u64>()
-            .await?;
+        // Get user by username or email
+        let row = sqlx::query(
+            r#"
+            SELECT id, password_hash FROM users 
+            WHERE (username = $1 OR email = $1) AND is_active = true
+            "#,
+        )
+        .bind(&request.username_or_email)
+        .fetch_one(&pg_pool)
+        .await?;
 
-        if user_exists == 0 {
-            return Err("Invalid credentials".into());
-        }
-
-        // Get user ID as string
-        let user_id_str = client
-            .query("SELECT id FROM users WHERE (username = ? OR email = ?) AND is_active = ? AND domain = ?")
-            .bind(&request.username_or_email)
-            .bind(&request.username_or_email)
-            .bind(true)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
-
-        let user_id = Uuid::parse_str(&user_id_str)?;
-
-        let user = self.get_user_by_id(pool, domain, user_id).await?;
-
-        // Get password hash from database
-        let password_hash = client
-            .query("SELECT password_hash FROM users WHERE id = ? AND domain = ?")
-            .bind(user_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
+        let user_id: Uuid = row.get("id");
+        let password_hash: String = row.get("password_hash");
 
         // Verify password
         if !verify(&request.password, &password_hash)? {
             return Err("Invalid credentials".into());
         }
 
-        // Update last login
+        // Update last login time
         let now = Utc::now();
-        client
-            .query("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ? AND domain = ?")
+        sqlx::query("UPDATE users SET last_login_at = $1, updated_at = $2 WHERE id = $3")
             .bind(now)
             .bind(now)
             .bind(user_id)
-            .bind(domain)
-            .execute()
+            .execute(&pg_pool)
             .await?;
 
-        // Generate JWT token
-        let expiration = now + chrono::Duration::hours(self.jwt_expiration_hours);
-        let claims = Claims {
-            sub: user_id.to_string(),
-            exp: expiration.timestamp() as usize,
-            iat: now.timestamp() as usize,
-        };
-
-        let token = encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret(self.jwt_secret.as_ref()),
-        )?;
-
-        Ok(LoginResponse {
-            user,
-            token,
-            token_type: "Bearer".to_string(),
-            expires_at: expiration,
-        })
+        // Get the user details
+        self.get_user_by_id(pool, domain, user_id).await
     }
 
-    async fn get_client_by_domain(
-        &self,
-        pool: &DatabasePool,
-        domain: &str,
-    ) -> Result<Client, Box<dyn std::error::Error>> {
-        use crate::database::get_client_by_domain;
-        get_client_by_domain(pool, domain)
-            .await
-            .ok_or_else(|| format!("No database connection found for domain: {}", domain).into())
-    }
-
-    async fn get_role_by_id(
-        &self,
-        client: &Client,
-        domain: &str,
-        role_id: Uuid,
-    ) -> Result<Role, Box<dyn std::error::Error>> {
-        // Get role data as separate queries to avoid tuple size limits
-        let role_id_str = client
-            .query("SELECT id FROM roles WHERE id = ? AND domain = ?")
-            .bind(role_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
-
-        let name = client
-            .query("SELECT name FROM roles WHERE id = ? AND domain = ?")
-            .bind(role_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
-
-        let description = client
-            .query("SELECT description FROM roles WHERE id = ? AND domain = ?")
-            .bind(role_id)
-            .bind(domain)
-            .fetch_optional::<String>()
-            .await?;
-
-        let is_active = client
-            .query("SELECT is_active FROM roles WHERE id = ? AND domain = ?")
-            .bind(role_id)
-            .bind(domain)
-            .fetch_one::<bool>()
-            .await?;
-
-        let created_at_str = client
-            .query("SELECT created_at FROM roles WHERE id = ? AND domain = ?")
-            .bind(role_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
-
-        let updated_at_str = client
-            .query("SELECT updated_at FROM roles WHERE id = ? AND domain = ?")
-            .bind(role_id)
-            .bind(domain)
-            .fetch_one::<String>()
-            .await?;
-
-        let parsed_role_id = Uuid::parse_str(&role_id_str)?;
-        let created_at = DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc);
-        let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)?.with_timezone(&Utc);
-
-        Ok(Role {
-            id: parsed_role_id,
-            name,
-            description,
-            is_active,
-            created_at,
-            updated_at,
-        })
-    }
+    // Role functionality removed for simplicity
 }

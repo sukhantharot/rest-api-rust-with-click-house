@@ -1,9 +1,8 @@
 use chrono::{DateTime, Utc};
-use clickhouse::Row;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blog {
     pub id: Uuid,
     pub title: String,
@@ -65,7 +64,7 @@ pub struct BlogResponse {
     pub tags: Vec<TagResponse>,
 }
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlogCategory {
     pub id: Uuid,
     pub name: String,
@@ -101,7 +100,7 @@ pub struct CategoryResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlogTag {
     pub id: Uuid,
     pub name: String,
@@ -137,7 +136,7 @@ pub struct TagResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlogTagMapping {
     pub id: Uuid,
     pub blog_id: Uuid,

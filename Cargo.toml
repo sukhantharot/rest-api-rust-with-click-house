@@ -4,14 +4,11 @@ version = "0.1.0"
 edition = "2021"
 default-run = "rarch"
 
-[[bin]]
-name = "migrate"
-path = "src/bin/migrate.rs"
 
 [dependencies]
 axum = { version = "0.8", features = ["json", "macros"] }
 tokio = { version = "1.47", features = ["full"] }
-clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
 url = "2.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -27,13 +24,11 @@ jsonwebtoken = "9.0"
 thiserror = "1.0"
 anyhow = "1.0"
 async-trait = "0.1"
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
 deadpool = "0.12"
-deadpool-postgres = "0.14"
 regex = "1.10"
 futures = "0.3"
 lazy_static = "1.4"
 clap = { version = "4.4", features = ["derive"] }
 
 [dev-dependencies]
-clickhouse = { version = "0.13.3", features = ["test-util"] }
+tokio-test = "0.4"
